@@ -8,7 +8,8 @@
     "dev": "node --watch src/index.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "test": "jest --coverage"
+    "test": "jest",
+    "test:coverage": "jest --coverage"
   },
   "keywords": [],
   "author": "",
