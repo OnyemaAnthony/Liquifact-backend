@@ -6,6 +6,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
+const { authenticateToken } = require('./middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -44,7 +45,7 @@ app.get('/api/invoices', (req, res) => {
   });
 });
 
-app.post('/api/invoices', (req, res) => {
+app.post('/api/invoices', authenticateToken, (req, res) => {
   res.status(201).json({
     data: { id: 'placeholder', status: 'pending_verification' },
     message: 'Invoice upload will be implemented with verification and tokenization.',
@@ -60,6 +61,13 @@ app.get('/api/escrow/:invoiceId', (req, res) => {
   });
 });
 
+app.post('/api/escrow', authenticateToken, (req, res) => {
+  res.status(200).json({
+    data: { status: 'funded' },
+    message: 'Escrow write operation simulating contract call.',
+  });
+});
+
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found', path: req.path });
 });
@@ -69,6 +77,10 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`LiquiFact API running at http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`LiquiFact API running at http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
