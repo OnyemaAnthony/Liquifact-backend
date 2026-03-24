@@ -52,13 +52,49 @@ Default port: **3001**. After starting:
 
 ---
 
+## API Response Structure
+
+All endpoints return a standardized JSON envelope:
+
+```json
+{
+  "data": { ... },
+  "meta": {
+    "timestamp": "2026-03-24T09:55:00.000Z",
+    "version": "0.1.0"
+  },
+  "error": null
+}
+```
+
+In case of an error:
+
+```json
+{
+  "data": null,
+  "meta": { ... },
+  "error": {
+    "message": "Human readable message",
+    "code": "ERROR_CODE",
+    "details": { ... }
+  }
+}
+```
+
+---
+
 ## Project structure
 
 ```
 liquifact-backend/
 ├── src/
-│   └── index.js    # Express app, routes (health, invoices, escrow)
-├── .env.example   # Env template (PORT, Stellar, DB placeholders)
+│   ├── app.js               # Express application setup
+│   ├── index.js             # Server entry point
+│   ├── utils/
+│   │   └── responseHelper.js # Standardized response logic
+│   └── tests/
+│       └── response.test.js # Coverage-backed integration tests
+├── .env.example
 ├── eslint.config.js
 └── package.json
 ```
