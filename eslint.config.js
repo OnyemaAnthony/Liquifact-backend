@@ -35,7 +35,7 @@ module.exports = [
       'jsdoc/require-param': 'error',
 
       // General quality rules
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      'no-unused-vars': ['error', { varsIgnorePattern: '^_', argsIgnorePattern: '^_' }],
       'no-console': 'off',
       'eqeqeq': 'error',
       'curly': 'error',
@@ -57,16 +57,17 @@ module.exports = [
       sourceType: 'module',
       globals: {
         ...globals.node,
+        jest: 'readonly',
         describe: 'readonly',
         it: 'readonly',
         expect: 'readonly',
-        vi: 'readonly',
         beforeEach: 'readonly',
         afterEach: 'readonly',
       },
     },
     rules: {
       // Relax some rules for tests
+      'no-unused-vars': ['error', { varsIgnorePattern: '^_', argsIgnorePattern: '^_' }],
       'security/detect-non-literal-fs-filename': 'off',
       'jsdoc/require-jsdoc': 'off',
       'jsdoc/require-description': 'off',

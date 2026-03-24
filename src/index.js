@@ -123,14 +123,17 @@ app.delete('/api/invoices/:id', (req, res) => {
     return res.status(404).json({ error: 'Invoice not found' });
   }
 
+  // eslint-disable-next-line security/detect-object-injection
   if (invoices[invoiceIndex].deletedAt) {
     return res.status(400).json({ error: 'Invoice is already deleted' });
   }
 
+  // eslint-disable-next-line security/detect-object-injection
   invoices[invoiceIndex].deletedAt = new Date().toISOString();
 
   return res.json({
     message: 'Invoice soft-deleted successfully.',
+    // eslint-disable-next-line security/detect-object-injection
     data: invoices[invoiceIndex],
   });
 });
@@ -151,14 +154,17 @@ app.patch('/api/invoices/:id/restore', (req, res) => {
     return res.status(404).json({ error: 'Invoice not found' });
   }
 
+  // eslint-disable-next-line security/detect-object-injection
   if (!invoices[invoiceIndex].deletedAt) {
     return res.status(400).json({ error: 'Invoice is not deleted' });
   }
 
+  // eslint-disable-next-line security/detect-object-injection
   invoices[invoiceIndex].deletedAt = null;
 
   return res.json({
     message: 'Invoice restored successfully.',
+    // eslint-disable-next-line security/detect-object-injection
     data: invoices[invoiceIndex],
   });
 });
@@ -175,7 +181,11 @@ app.get('/api/escrow/:invoiceId', async (req, res) => {
   const { invoiceId } = req.params;
 
   try {
-    // Simulated remote contract call
+    /**
+     * Simulated remote contract call.
+     * 
+     * @returns {Promise<Object>} The escrow data.
+     */
     const operation = async () => {
       return { invoiceId, status: 'not_found', fundedAmount: 0 };
     };
