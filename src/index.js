@@ -7,11 +7,16 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+const asyncHandler = require('./utils/asyncHandler');
+const errorHandler = require('./middleware/errorHandler');
 const { callSorobanContract } = require('./services/soroban');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+/**
+ * Global Middlewares
+ */
 app.use(cors());
 app.use(express.json());
 
