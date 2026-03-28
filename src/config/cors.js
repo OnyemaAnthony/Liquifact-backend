@@ -110,8 +110,10 @@ function createCorsOptions() {
 
   return {
     /**
-     * @param {string|undefined} origin
-     * @param {Function} callback
+     * Validates request origin against the allowlist.
+     * @param {string|undefined} origin - The request origin header value
+     * @param {Function} callback - CORS callback (err, allow)
+     * @returns {void}
      */
     origin(origin, callback) {
       // Non-browser requests (no Origin header) are always allowed.

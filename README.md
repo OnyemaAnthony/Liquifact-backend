@@ -7,6 +7,23 @@ Part of the LiquiFact stack: **frontend (Next.js)** | **backend (this repo)** | 
 
 ---
 
+## Error Handling (RFC 7807)
+
+This API uses RFC 7807 Problem Details format for error responses.
+
+Example:
+{
+  "type": "https://example.com/errors/bad-request",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "Invalid input",
+  "instance": "/api/resource"
+}
+
+Content-Type: application/problem+json
+
+---
+
 ## Prerequisites
 
 - Node.js 20+ (LTS recommended)
@@ -57,9 +74,14 @@ Default port: **3001**. After starting:
 
 ## Request Body Size Limits
 
-> **Security guardrail** — all incoming request bodies are capped at configurable byte limits.
-> Oversized payloads are rejected immediately with a structured `413 Payload Too Large` response,
-> before any business logic runs.
+| Command                | Description                             |
+|------------------------|-----------------------------------------|
+| `npm run dev`          | Start API with watch mode               |
+| `npm run start`        | Start API (production-style)            |
+| `npm run lint`         | Run ESLint on `src/`                    |
+| `npm run lint:fix`     | Auto-fix linting issues                 |
+| `npm test`             | Run unit tests                          |
+| `npm run test:coverage`| Run tests with coverage report          |
 
 ### How it works
 
@@ -126,8 +148,9 @@ npm run lint:fix   # auto-fix
 ```
 
 ### Testing
-
-We use **Vitest** and **Supertest** for testing.
+We use **Jest** and **Supertest** for testing.
+- Run tests: `npm test`
+- Check coverage: `npm run test:coverage`
 
 ```bash
 npm test                # run all tests
@@ -181,10 +204,11 @@ Check the standard `RateLimit-*` headers for quota and reset time.
 CORS_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
 ```
 
-- Requests **without** an `Origin` header are allowed (curl, Postman, etc.).
-- Requests from **allowed** origins receive normal CORS headers.
-- Requests from **disallowed** origins are rejected with `403 Forbidden`.
-- Origin matching is **exact only** — no wildcards or regex.
+Behavior:
+- Requests without an `Origin` header are allowed, as it can be curl, postman, etc.
+- Requests from allowed origins receive normal CORS headers.
+- Requests from disallowed origins are rejected with `403 Forbidden`.
+- Origin matching is exact only. Wildcards and regex patterns are not supported.
 
 **Development default:** If `NODE_ENV=development` and `CORS_ALLOWED_ORIGINS` is unset,
 common local origins are allowed automatically.
@@ -194,24 +218,65 @@ all browser origins are denied.
 
 ---
 
-## Project Structure
+## API Response Structure
+
+All endpoints return a standardized JSON envelope:
+
+```json
+{
+  "data": { ... },
+  "meta": {
+    "timestamp": "2026-03-24T09:55:00.000Z",
+    "version": "0.1.0"
+  },
+  "error": null
+}
+```
+
+In case of an error:
+
+```json
+{
+  "data": null,
+  "meta": { ... },
+  "error": {
+    "message": "Human readable message",
+    "code": "ERROR_CODE",
+    "details": { ... }
+  }
+}
+```
+
+---
+
+## Project structure
 
 ```
 liquifact-backend/
 ├── src/
-│   ├── config/
-│   │   └── cors.js                    # CORS allowlist parsing and policy
-│   ├── middleware/
-│   │   └── bodySizeLimits.js          # ← NEW: request body size guardrails
-│   ├── services/
-│   │   └── soroban.js                 # Contract interaction wrappers
+│   ├── app.js               # Express application setup
+│   ├── index.js             # Server entry point
 │   ├── utils/
-│   │   └── retry.js                   # Exponential backoff utility
-│   ├── __tests__/
-│   │   └── bodySizeLimits.test.js     # ← NEW: comprehensive test suite
-│   ├── app.js                         # Express app, middleware, routes
-│   └── index.js                       # Runtime bootstrap
-├── .env.example                       # Env template (includes size-limit vars)
+│   │   └── responseHelper.js # Standardized response logic
+│   └── tests/
+│       └── response.test.js # Coverage-backed integration tests
+├── .env.example
+│   │   └── cors.js     # CORS allowlist parsing and policy
+│   │   └── cors.js       # CORS allowlist parsing and policy
+│   ├── middleware/
+│   │   └── security.js   # Helmet security header configuration
+│   ├── services/
+│   │   └── soroban.js    # Contract interaction wrappers
+│   ├── utils/
+│   │   └── retry.js    # Exponential backoff utility
+│   ├── app.js          # Express app, middleware, routes
+│   └── index.js        # Runtime bootstrap
+├── .env.example        # Env template
+│   │   └── retry.js      # Exponential backoff utility
+│   ├── index.js          # Express app, routes, error handler (importable for tests)
+│   ├── index.test.js     # Integration + security header tests (Jest + supertest)
+│   └── server.js         # Server entry point — binds app to PORT
+├── .env.example          # Env template (PORT, Stellar, DB placeholders)
 ├── eslint.config.js
 ├── vitest.config.js
 └── package.json
@@ -219,9 +284,29 @@ liquifact-backend/
 
 ---
 
+## Security
+
+HTTP response headers are hardened via [Helmet](https://helmetjs.github.io/) (`src/middleware/security.js`). Applied headers include:
+
+| Header | Value / Policy |
+|--------|----------------|
+| `Content-Security-Policy` | Restricts all resource loading to `'self'`; blocks objects and frames |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains; preload` |
+| `X-Frame-Options` | `DENY` — prevents clickjacking |
+| `X-Content-Type-Options` | `nosniff` — disables MIME sniffing |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Cross-Origin-Opener-Policy` | `same-origin` |
+| `Cross-Origin-Resource-Policy` | `same-origin` |
+| `Cross-Origin-Embedder-Policy` | `require-corp` |
+| `X-DNS-Prefetch-Control` | `off` |
+| `X-Permitted-Cross-Domain-Policies` | `none` |
+| `X-Powered-By` | Removed (technology fingerprinting prevention) |
+
+---
+
 ## Resiliency & Retries
 
-`src/utils/retry.js` provides exponential backoff for Soroban contract calls:
+To ensure reliable communication with Soroban contract provider APIs, this backend implements a robust **Retry and Backoff** mechanism (`src/utils/retry.js`).
 
 - **Automatic retries** for HTTP 429, 502, 503, 504, and network timeouts.
 - **Jitter** (±20%) prevents thundering-herd problems.
@@ -233,10 +318,9 @@ liquifact-backend/
 
 GitHub Actions runs on every push and pull request to `main`:
 
-1. **Lint** — `npm run lint`
-2. **Tests** — `npm test`
-3. **Coverage gate** — fails if coverage drops below 95%
-4. **Build check** — `node --check src/index.js`
+- **Lint** — `npm run lint`
+- **Tests** — `npm run test:coverage`
+- **Build check** — `node --check src/index.js` (syntax)
 
 Ensure your branch passes all checks before opening a PR.
 

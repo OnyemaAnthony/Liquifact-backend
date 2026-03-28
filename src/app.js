@@ -17,7 +17,7 @@
 'use strict';
 
 const express = require('express');
-const cors    = require('cors');
+const cors = require('cors');
 require('dotenv').config();
 
 const { callSorobanContract }               = require('./services/soroban');
@@ -127,8 +127,11 @@ function createApp() {
   app.get('/api/escrow/:invoiceId', async (req, res) => {
     const { invoiceId } = req.params;
     try {
-      // Wrap the simulated contract call in the retry/backoff utility so that
-      // transient Horizon errors are handled transparently.
+      // Simulated remote contract call
+      /**
+       * Returns placeholder escrow data for the given invoice.
+       * @returns {Promise<Object>} The escrow state object
+       */
       const operation = async () => {
         return { invoiceId, status: 'not_found', fundedAmount: 0 };
       };
