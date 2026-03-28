@@ -13,6 +13,7 @@
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { app, resetStore, startServer } = require('./index');
+const req = (method, path) => request(app)[method](path);
 
 describe('LiquiFact API', () => {
   const secret = process.env.JWT_SECRET || 'test-secret';
@@ -80,13 +81,14 @@ describe('LiquiFact API', () => {
     });
 
     it('DELETE /api/invoices/:id - soft deletes an invoice', async () => {
+      const bearer = authHeader();
       const postRes = await request(app)
         .post('/api/invoices')
-        .set('Authorization', authHeader())
+        .set('Authorization', bearer)
         .send({ amount: 500, customer: 'Delete Me' });
       const id = postRes.body.data.id;
 
-      const delRes = await request(app).delete(`/api/invoices/${id}`).set('Authorization', `Bearer ${validToken}`);
+      const delRes = await request(app).delete(`/api/invoices/${id}`).set('Authorization', bearer);
       expect(delRes.status).toBe(200);
       expect(delRes.body.data.deletedAt).not.toBeNull();
 
@@ -100,30 +102,32 @@ describe('LiquiFact API', () => {
     });
 
     it('DELETE /api/invoices/:id - fails for non-existent or already deleted', async () => {
-      const res404 = await request(app).delete('/api/invoices/nonexistent').set('Authorization', `Bearer ${validToken}`);
+      const bearer = authHeader();
+      const res404 = await request(app).delete('/api/invoices/nonexistent').set('Authorization', bearer);
       expect(res404.status).toBe(404);
 
       const postRes = await request(app)
         .post('/api/invoices')
-        .set('Authorization', authHeader())
+        .set('Authorization', bearer)
         .send({ amount: 100, customer: 'X' });
       const id = postRes.body.data.id;
-      await request(app).delete(`/api/invoices/${id}`).set('Authorization', `Bearer ${validToken}`);
+      await request(app).delete(`/api/invoices/${id}`).set('Authorization', bearer);
 
-      const res400 = await request(app).delete(`/api/invoices/${id}`).set('Authorization', `Bearer ${validToken}`);
+      const res400 = await request(app).delete(`/api/invoices/${id}`).set('Authorization', bearer);
       expect(res400.status).toBe(400);
       expect(res400.body.error).toBe('Invoice is already deleted');
     });
 
     it('PATCH /api/invoices/:id/restore - restores a deleted invoice', async () => {
+      const bearer = authHeader();
       const postRes = await request(app)
         .post('/api/invoices')
-        .set('Authorization', authHeader())
+        .set('Authorization', bearer)
         .send({ amount: 100, customer: 'X' });
       const id = postRes.body.data.id;
-      await request(app).delete(`/api/invoices/${id}`).set('Authorization', `Bearer ${validToken}`);
+      await request(app).delete(`/api/invoices/${id}`).set('Authorization', bearer);
 
-      const restoreRes = await request(app).patch(`/api/invoices/${id}/restore`).set('Authorization', `Bearer ${validToken}`);
+      const restoreRes = await request(app).patch(`/api/invoices/${id}/restore`).set('Authorization', bearer);
       expect(restoreRes.status).toBe(200);
       expect(restoreRes.body.data.deletedAt).toBeNull();
 
@@ -132,16 +136,17 @@ describe('LiquiFact API', () => {
     });
 
     it('PATCH /api/invoices/:id/restore - fails for non-existent or not deleted', async () => {
-      const res404 = await request(app).patch('/api/invoices/nonexistent/restore').set('Authorization', `Bearer ${validToken}`);
+      const bearer = authHeader();
+      const res404 = await request(app).patch('/api/invoices/nonexistent/restore').set('Authorization', bearer);
       expect(res404.status).toBe(404);
 
       const postRes = await request(app)
         .post('/api/invoices')
-        .set('Authorization', authHeader())
+        .set('Authorization', bearer)
         .send({ amount: 100, customer: 'X' });
       const id = postRes.body.data.id;
 
-      const res400 = await request(app).patch(`/api/invoices/${id}/restore`).set('Authorization', `Bearer ${validToken}`);
+      const res400 = await request(app).patch(`/api/invoices/${id}/restore`).set('Authorization', bearer);
       expect(res400.status).toBe(400);
       expect(res400.body.error).toBe('Invoice is not deleted');
     });
@@ -163,7 +168,7 @@ describe('LiquiFact API', () => {
 
   describe('Escrow', () => {
     it('GET /api/escrow/:invoiceId - returns placeholder escrow state', async () => {
-      const response = await request(app).get('/api/escrow/123').set('Authorization', `Bearer ${validToken}`);
+      const response = await request(app).get('/api/escrow/123').set('Authorization', authHeader());
       expect(response.status).toBe(200);
       expect(response.body.data).toHaveProperty('invoiceId', '123');
     });
@@ -222,6 +227,20 @@ describe('LiquiFact API', () => {
 // ---------------------------------------------------------------------------
 
 describe('Security headers — all endpoints', () => {
+  /**
+   * Asserts the security headers applied by Helmet.
+   *
+   * @param {import('supertest').Response} res - HTTP response.
+   * @returns {void}
+   */
+  const expectSecureHeaders = (res) => {
+    expect(res.headers['content-security-policy']).toBeDefined();
+    expect(res.headers['strict-transport-security']).toBeDefined();
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['x-frame-options']).toBe('DENY');
+    expect(res.headers['referrer-policy']).toBeDefined();
+  };
+
   const endpoints = [
     { method: 'get', path: '/health' },
     { method: 'get', path: '/api' },
