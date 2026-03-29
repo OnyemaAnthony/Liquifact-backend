@@ -1,5 +1,5 @@
 const AppError = require('../errors/AppError');
-const formatProblemDetails = require('../utils/problemDetails');
+const { error: buildErrorResponse } = require('../utils/responseHelper');
 
 /**
  * Global error handling middleware
@@ -12,34 +12,37 @@ const formatProblemDetails = require('../utils/problemDetails');
  * @returns {void}
  */
 function errorHandler(err, req, res, _next) {
-  let problem;
+  const statusCode = err.statusCode || err.status || 500;
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  // Check if it's a known AppError instance
-  if (err instanceof AppError) {
-    problem = formatProblemDetails({
-      type: err.type,
-      title: err.title,
-      status: err.status,
-      detail: err.detail,
-      instance: err.instance || req.originalUrl,
-      stack: err.stack,
-    });
-  } else {
-    // If it's an unknown error, provide a fallback 500 status
+  if (!(err instanceof AppError)) {
     console.error('Unhandled Error:', err);
-    problem = formatProblemDetails({
-      type: 'https://example.com/probs/unexpected-error',
-      title: 'Internal Server Error',
-      status: 500,
-      detail: 'An unexpected error occurred while processing your request.',
-      instance: req.originalUrl,
-      stack: err.stack,
-    });
   }
 
-  // RFC 7807 requires the Content-Type to be 'application/problem+json'
-  res.header('Content-Type', 'application/problem+json');
-  res.status(problem.status).json(problem);
+  let message;
+  if (statusCode >= 500 && isProduction) {
+    message = 'Internal Server Error';
+  } else if (err instanceof AppError) {
+    message = err.detail || err.title || 'Application error';
+  } else {
+    message = err.message || 'An unexpected error occurred while processing your request.';
+  }
+
+  let code = 'INTERNAL_ERROR';
+  if (statusCode === 400) {
+    code = 'BAD_REQUEST';
+  } else if (statusCode === 401) {
+    code = 'UNAUTHORIZED';
+  } else if (statusCode === 403) {
+    code = 'FORBIDDEN';
+  } else if (statusCode === 404) {
+    code = 'NOT_FOUND';
+  }
+
+  const details = isDevelopment ? err.stack || err.message : null;
+  const payload = buildErrorResponse(message, code, details);
+  res.status(statusCode).json(payload);
 }
 
 module.exports = errorHandler;
