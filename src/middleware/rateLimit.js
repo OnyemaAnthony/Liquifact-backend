@@ -20,14 +20,13 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   /**
-   * Key generator for rate limiting.
+   * Generates a rate-limit key per user ID or IP address.
    *
    * @param {import('express').Request} req - Express request object.
-   * @returns {string} Rate limit key.
+   * @returns {string} The rate-limit key.
    */
   keyGenerator: (req) => {
-    // Use user ID if authenticated, otherwise fallback to safe IP generator
-    return req.user ? `user_${req.user.id}` : ipKeyGenerator(req);
+    return req.user ? `user_${req.user.id}` : ipKeyGenerator(req.ip);
   },
 });
 
@@ -46,13 +45,13 @@ const sensitiveLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   /**
-   * Key generator for rate limiting.
+   * Generates a rate-limit key per user ID or IP address.
    *
    * @param {import('express').Request} req - Express request object.
-   * @returns {string} Rate limit key.
+   * @returns {string} The rate-limit key.
    */
   keyGenerator: (req) => {
-    return req.user ? `user_${req.user.id}` : ipKeyGenerator(req);
+    return req.user ? `user_${req.user.id}` : ipKeyGenerator(req.ip);
   },
 });
 
