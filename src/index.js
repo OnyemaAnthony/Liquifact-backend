@@ -261,3 +261,4 @@ module.exports = app;
 module.exports.createApp = createApp;
 module.exports.startServer = startServer;
 module.exports.resetStore = resetStore;
+module.exports.startServer = startServer;

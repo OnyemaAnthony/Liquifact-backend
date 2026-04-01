@@ -2,14 +2,14 @@
  * @fileoverview Express application factory for the LiquiFact API.
  *
  * Wires together all middleware and routes in the correct order:
- *   1. CORS policy (environment-driven allowlist, 403 on blocked origins)
- *   2. Request body-size guardrails (100 KB global JSON, 512 KB invoice limit)
- *   3. URL-encoded body parser (50 KB limit)
- *   4. Application routes (health, api-info, invoices, escrow)
- *   5. 404 catch-all
- *   6. CORS error handler  → 403 JSON
- *   7. Payload-too-large handler → 413 JSON
- *   8. Generic internal-error handler → 500 JSON
+ * 1. CORS policy (environment-driven allowlist, 403 on blocked origins)
+ * 2. Request body-size guardrails (100 KB global JSON, 512 KB invoice limit)
+ * 3. URL-encoded body parser (50 KB limit)
+ * 4. Application routes (health, api-info, invoices, escrow)
+ * 5. 404 catch-all
+ * 6. CORS error handler  → 403 JSON
+ * 7. Payload-too-large handler → 413 JSON
+ * 8. Generic internal-error handler → 500 JSON
  *
  * @module app
  */
@@ -148,17 +148,15 @@ function handleInternalError(err, req, res, _next) {
  * @returns {import('express').Express} Configured Express application.
  */
 function createApp() {
+  const isTest = process.env.NODE_ENV === 'test';
+  if (isTest) { /* eslint-disable-line no-unused-vars */ }
   const app = express();
 
   // ── 1. CORS ──────────────────────────────────────────────────────────────
-  // Must come before body parsers so preflight OPTIONS requests are handled
-  // before any payload is read.
   app.use(cors(createCorsOptions()));
 
   // ── 2 & 3. Body-size guardrails ──────────────────────────────────────────
-  // Global JSON cap (default 100 KB, override via BODY_LIMIT_JSON).
   app.use(jsonBodyLimit());
-  // URL-encoded form data cap (default 50 KB, override via BODY_LIMIT_URLENCODED).
   app.use(urlencodedBodyLimit());
 
   // ── 4. Routes ────────────────────────────────────────────────────────────
@@ -207,10 +205,6 @@ function createApp() {
     const { invoiceId } = req.params;
     try {
       // Simulated remote contract call
-      /**
-       * Returns placeholder escrow data for the given invoice.
-       * @returns {Promise<Object>} The escrow state object
-       */
       const operation = async () => {
         return { invoiceId, status: 'not_found', fundedAmount: 0 };
       };
@@ -224,7 +218,14 @@ function createApp() {
     }
   });
 
-  // Developer test route — forces a 500 to exercise the error handler
+  /**
+   * Simulated error route for testing error handling middleware.
+   *
+   * @param {import('express').Request} req Express request.
+   * @param {import('express').Response} res Express response.
+   * @param {import('express').NextFunction} next Express next callback.
+   * @returns {void}
+   */
   app.get('/error', (req, res, next) => {
     next(new Error('Simulated server error'));
   });
@@ -235,9 +236,9 @@ function createApp() {
   });
 
   // ── 6 – 8. Error handlers (order matters) ────────────────────────────────
-  app.use(handleCorsError);         // 403 for blocked CORS origins
-  app.use(payloadTooLargeHandler);  // 413 for oversized request bodies
-  app.use(handleInternalError);     // 500 for everything else
+  app.use(handleCorsError);
+  app.use(payloadTooLargeHandler);
+  app.use(handleInternalError);
 
   return app;
 }
