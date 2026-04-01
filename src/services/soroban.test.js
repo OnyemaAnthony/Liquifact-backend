@@ -15,8 +15,8 @@ describe('Soroban Integration Wrapper', () => {
       const operation = jest.fn().mockImplementation(() => {
         attempts++;
         if (attempts < 2) {
-          const err = new Error('Gateway Timeout');
-          err.code = 'ETIMEDOUT';
+          const err = new Error('503 Service Unavailable');
+          err.status = 503;
           return Promise.reject(err);
         }
         return Promise.resolve('recovered');

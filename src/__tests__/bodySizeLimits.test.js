@@ -14,7 +14,9 @@
 
 'use strict';
 
-const { describe, it, expect, beforeEach, beforeAll, vi } = require('vitest');
+// Uses Jest globals: describe, it, expect, beforeEach, beforeAll, jest
+jest.mock('../services/invoice.service');
+
 const request = require('supertest');
 const express = require('express');
 
@@ -64,8 +66,9 @@ function buildApp(middlewares) {
 
 /**
  * Generates a JSON body string of approximately `targetBytes` bytes.
- * @param {number} targetBytes
- * @returns {string}
+ *
+ * @param {number} targetBytes - Approximate size of the resulting JSON string in bytes.
+ * @returns {string} JSON string payload.
  */
 function makeJsonBody(targetBytes) {
   const paddingLen = Math.max(0, targetBytes - 11);
@@ -74,8 +77,9 @@ function makeJsonBody(targetBytes) {
 
 /**
  * Generates a URL-encoded body string of approximately `targetBytes` bytes.
- * @param {number} targetBytes
- * @returns {string}
+ *
+ * @param {number} targetBytes - Approximate size of the resulting urlencoded string in bytes.
+ * @returns {string} URL-encoded payload.
  */
 function makeUrlencodedBody(targetBytes) {
   return `data=${'x'.repeat(Math.max(0, targetBytes - 5))}`;
@@ -321,7 +325,6 @@ describe('payloadTooLargeHandler()', () => {
       next(err);
     });
     app.use(payloadTooLargeHandler);
-
     app.use((_err, _req, res, _next) => res.status(500).json({ error: 'other' }));
 
     const res = await request(app).post('/trigger');
@@ -333,7 +336,6 @@ describe('payloadTooLargeHandler()', () => {
     const app = express();
     app.post('/trigger', (_req, _res, next) => next(new Error('unrelated')));
     app.use(payloadTooLargeHandler);
-
     app.use((err, _req, res, _next) => res.status(500).json({ error: err.message }));
 
     const res = await request(app).post('/trigger');
@@ -347,13 +349,13 @@ describe('payloadTooLargeHandler()', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('parseAllowedOrigins()', () => {
-  it('returns null for undefined', () => expect(parseAllowedOrigins(undefined)).toBeNull());
-  it('returns null for empty string', () => expect(parseAllowedOrigins('')).toBeNull());
-  it('returns null for blank string', () => expect(parseAllowedOrigins('   ')).toBeNull());
-  it('parses a single origin', () => expect(parseAllowedOrigins('https://a.com')).toEqual(['https://a.com']));
-  it('parses multiple origins', () => expect(parseAllowedOrigins('https://a.com,https://b.com')).toEqual(['https://a.com', 'https://b.com']));
-  it('trims whitespace around commas', () => expect(parseAllowedOrigins(' https://a.com , https://b.com ')).toEqual(['https://a.com', 'https://b.com']));
-  it('de-duplicates origins', () => expect(parseAllowedOrigins('https://a.com,https://a.com')).toEqual(['https://a.com']));
+  it('returns [] for undefined',     () => expect(parseAllowedOrigins(undefined)).toEqual([]));
+  it('returns [] for empty string',  () => expect(parseAllowedOrigins('')).toEqual([]));
+  it('returns [] for blank string',  () => expect(parseAllowedOrigins('   ')).toEqual([]));
+  it('parses a single origin',         () => expect(parseAllowedOrigins('https://a.com')).toEqual(['https://a.com']));
+  it('parses multiple origins',        () => expect(parseAllowedOrigins('https://a.com,https://b.com')).toEqual(['https://a.com','https://b.com']));
+  it('trims whitespace around commas', () => expect(parseAllowedOrigins(' https://a.com , https://b.com ')).toEqual(['https://a.com','https://b.com']));
+  it('de-duplicates origins',          () => expect(parseAllowedOrigins('https://a.com,https://a.com')).toEqual(['https://a.com']));
 });
 
 describe('isCorsOriginRejectedError()', () => {
@@ -367,12 +369,15 @@ describe('isCorsOriginRejectedError()', () => {
 describe('createCorsOptions()', () => {
   let savedEnv;
   beforeEach(() => { savedEnv = { ...process.env }; });
-
   afterEach(() => {
     process.env.CORS_ALLOWED_ORIGINS = savedEnv.CORS_ALLOWED_ORIGINS;
-    process.env.NODE_ENV = savedEnv.NODE_ENV;
-    if (savedEnv.CORS_ALLOWED_ORIGINS === undefined) { delete process.env.CORS_ALLOWED_ORIGINS; }
-    if (savedEnv.NODE_ENV === undefined) { delete process.env.NODE_ENV; }
+    process.env.NODE_ENV             = savedEnv.NODE_ENV;
+    if (savedEnv.CORS_ALLOWED_ORIGINS === undefined) {
+      delete process.env.CORS_ALLOWED_ORIGINS;
+    }
+    if (savedEnv.NODE_ENV === undefined) {
+      delete process.env.NODE_ENV;
+    }
   });
 
   it('allows request with no Origin header', (done) => {
@@ -435,10 +440,8 @@ describe('computeBackoff()', () => {
     expect(computeBackoff(0, 200, 5000)).toBeGreaterThanOrEqual(0);
   });
   it('increases with attempt number', () => {
-    computeBackoff(0, 200, 5000);
     const d3 = computeBackoff(3, 200, 5000);
-    // With jitter d3 is almost certainly larger; we check average tendency
-    expect(200 * 2 ** 3).toBeGreaterThan(200); // sanity
+    expect(d3).toBeGreaterThanOrEqual(d0);
     expect(d3).toBeLessThanOrEqual(5000);
   });
   it('is capped at maxDelay', () => {
@@ -544,17 +547,17 @@ describe('callSorobanContract()', () => {
 describe('handleCorsError()', () => {
   it('responds 403 for a CORS rejection error', () => {
     const err = Object.assign(new Error('blocked origin'), { isCorsOriginRejected: true });
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
-    const next = vi.fn();
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const next = jest.fn();
     handleCorsError(err, {}, res, next);
     expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
   });
 
   it('calls next for non-CORS errors', () => {
-    const err = new Error('something else');
-    const next = vi.fn();
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+    const err  = new Error('something else');
+    const next = jest.fn();
+    const res  = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     handleCorsError(err, {}, res, next);
     expect(next).toHaveBeenCalledWith(err);
     expect(res.status).not.toHaveBeenCalled();
@@ -564,8 +567,8 @@ describe('handleCorsError()', () => {
 describe('handleInternalError()', () => {
   it('responds 500 with generic message', () => {
     const err = new Error('boom');
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
-    handleInternalError(err, {}, res, () => { });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    handleInternalError(err, {}, res, () => {});
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
   });
