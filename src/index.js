@@ -2,6 +2,12 @@
 
 /**
  * Express server bootstrap for invoice financing, auth, and Stellar integration.
+ *
+ * All /api/* routes now enforce tenant-scoped data isolation:
+ *   - `extractTenant` middleware resolves the caller's tenantId from either
+ *     the `x-tenant-id` request header or an authenticated JWT claim.
+ *   - Every invoice read/write delegates to the tenant-aware repository so
+ *     that no tenant can ever observe or mutate another tenant's data.
  */
  * Express app configuration for invoice financing, auth, and Stellar integration.
  * Server startup lives in this module for local runs; tests can import the app directly.
@@ -224,10 +230,12 @@ function createApp(options = {}) {
 
 const app = createApp({ enableTestRoutes: process.env.NODE_ENV === 'test' });
 
+// ─── Server lifecycle ─────────────────────────────────────────────────────────
+
 /**
  * Starts the Express server.
  *
- * @returns {import('http').Server} The started server.
+ * @returns {import('http').Server}
  */
 const startServer = () => {
   const server = app.listen(PORT, () => {
@@ -241,9 +249,9 @@ const startServer = () => {
  *
  * @returns {void}
  */
-const resetStore = () => {
-  invoices = [];
-};
+// const resetStore = () => {
+//   invoices = [];
+// };
 
 if (process.env.NODE_ENV !== 'test') {
   startServer();
