@@ -14,10 +14,6 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { app, resetStore, startServer } = require('./index');
 
-const TEST_SECRET = process.env.JWT_SECRET || 'test-secret';
-const validToken = jwt.sign({ id: 1, role: 'user' }, TEST_SECRET, { expiresIn: '1h' });
-const authHeader = { Authorization: `Bearer ${validToken}` };
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -89,6 +85,9 @@ function expectSecureHeaders(res) {
 // ---------------------------------------------------------------------------
 
 describe('LiquiFact API', () => {
+  const secret = process.env.JWT_SECRET || 'test-secret';
+  const validToken = jwt.sign({ id: 1, role: 'user' }, secret);
+
   beforeEach(() => {
     if (typeof resetStore === 'function') resetStore();
   });

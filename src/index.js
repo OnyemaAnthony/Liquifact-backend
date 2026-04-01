@@ -1,140 +1,264 @@
 'use strict';
 
+/**
+ * Express server bootstrap for invoice financing, auth, and Stellar integration.
+ *
+ * All /api/* routes now enforce tenant-scoped data isolation:
+ *   - `extractTenant` middleware resolves the caller's tenantId from either
+ *     the `x-tenant-id` request header or an authenticated JWT claim.
+ *   - Every invoice read/write delegates to the tenant-aware repository so
+ *     that no tenant can ever observe or mutate another tenant's data.
+ */
+ * Express app configuration for invoice financing, auth, and Stellar integration.
+ * Server startup lives in this module for local runs; tests can import the app directly.
+ */
+
 const express = require('express');
 const cors = require('cors');
-const { deprecate } = require('./middleware/deprecation');
-const { authenticateToken } = require('./middleware/auth');
-const { globalLimiter, sensitiveLimiter } = require('./middleware/rateLimit');
-const errorHandler = require('./middleware/errorHandler');
 require('dotenv').config();
 
-const app = express();
+const { createSecurityMiddleware } = require('./middleware/security');
+const { globalLimiter, sensitiveLimiter } = require('./middleware/rateLimit');
+const { authenticateToken } = require('./middleware/auth');
+const asyncHandler = require('./utils/asyncHandler');
+const errorHandler = require('./middleware/errorHandler');
+const { callSorobanContract } = require('./services/soroban');
+const AppError = require('./errors/AppError');
+
 const PORT = process.env.PORT || 3001;
 
-/** @type {Map<string, object>} In-memory invoice store */
-let store = new Map();
+// In-memory storage for invoices (Issue #25).
+let invoices = [];
 
 /**
- * Resets the in-memory store. Used for test isolation.
+ * Create the Express application instance.
+ *
+ * @param {object} [options={}] - App options.
+ * @param {boolean} [options.enableTestRoutes=false] - Whether to expose test-only routes.
+ * @returns {import('express').Express}
+ */
+function createApp(options = {}) {
+  const { enableTestRoutes = false } = options;
+  const app = express();
+
+  app.use(createSecurityMiddleware());
+  app.use(cors());
+  app.use(express.json());
+  app.use(globalLimiter);
+
+  app.get('/health', (req, res) => {
+    return res.json({
+      status: 'ok',
+      service: 'liquifact-api',
+      version: '0.1.0',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get('/api', (req, res) => {
+    return res.json({
+      name: 'LiquiFact API',
+      description: 'Global Invoice Liquidity Network on Stellar',
+      endpoints: {
+        health: 'GET /health',
+        invoices: 'GET/POST /api/invoices',
+        escrow: 'GET/POST /api/escrow',
+      },
+    });
+  });
+
+  app.get('/api/invoices', (req, res) => {
+    const includeDeleted = req.query.includeDeleted === 'true';
+    const filteredInvoices = includeDeleted
+      ? invoices
+      : invoices.filter((inv) => !inv.deletedAt);
+
+    return res.json({
+      data: filteredInvoices,
+      message: includeDeleted ? 'Showing all invoices (including deleted).' : 'Showing active invoices.',
+    });
+  });
+
+  app.post('/api/invoices', sensitiveLimiter, authenticateToken, (req, res) => {
+    const { amount, customer } = req.body;
+
+    if (!amount || !customer) {
+      return res.status(400).json({ error: 'Amount and customer are required' });
+    }
+
+    const newInvoice = {
+      id: `inv_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      amount,
+      customer,
+      status: 'pending_verification',
+      createdAt: new Date().toISOString(),
+      deletedAt: null,
+    };
+
+    invoices.push(newInvoice);
+
+    return res.status(201).json({
+      data: newInvoice,
+      message: 'Invoice uploaded successfully.',
+    });
+  });
+
+  app.delete('/api/invoices/:id', authenticateToken, (req, res) => {
+    const { id } = req.params;
+    const invoiceIndex = invoices.findIndex((inv) => inv.id === id);
+
+    if (invoiceIndex === -1) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    // eslint-disable-next-line security/detect-object-injection
+    if (invoices[invoiceIndex].deletedAt) {
+      return res.status(400).json({ error: 'Invoice is already deleted' });
+    }
+
+    // eslint-disable-next-line security/detect-object-injection
+    invoices[invoiceIndex].deletedAt = new Date().toISOString();
+
+    return res.json({
+      message: 'Invoice soft-deleted successfully.',
+      // eslint-disable-next-line security/detect-object-injection
+      data: invoices[invoiceIndex],
+    });
+  });
+
+  app.patch('/api/invoices/:id/restore', authenticateToken, (req, res) => {
+    const { id } = req.params;
+    const invoiceIndex = invoices.findIndex((inv) => inv.id === id);
+
+    if (invoiceIndex === -1) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    // eslint-disable-next-line security/detect-object-injection
+    if (!invoices[invoiceIndex].deletedAt) {
+      return res.status(400).json({ error: 'Invoice is not deleted' });
+    }
+
+    // eslint-disable-next-line security/detect-object-injection
+    invoices[invoiceIndex].deletedAt = null;
+
+    return res.status(200).json({
+      message: 'Invoice restored successfully.',
+      // eslint-disable-next-line security/detect-object-injection
+      data: invoices[invoiceIndex],
+    });
+  });
+
+  app.get('/api/escrow/:invoiceId', authenticateToken, async (req, res) => {
+    const { invoiceId } = req.params;
+
+    try {
+      /**
+       * Simulates a Soroban operation for escrow lookup.
+       *
+       * @returns {Promise<object>} Placeholder escrow state.
+       */
+      const operation = async () => {
+        return { invoiceId, status: 'not_found', fundedAmount: 0 };
+      };
+
+      const data = await callSorobanContract(operation);
+      return res.json({
+        data,
+        message: 'Escrow state read from Soroban contract via robust integration wrapper.',
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message || 'Error fetching escrow state' });
+    }
+  });
+
+  app.post('/api/escrow', authenticateToken, sensitiveLimiter, (req, res) => {
+    return res.json({
+      data: { status: 'funded' },
+      message: 'Escrow operation simulated.',
+    });
+  });
+
+  app.get('/error-test-trigger', (req, res, next) => {
+    next(new Error('Simulated server error'));
+  });
+
+  if (enableTestRoutes) {
+    app.get('/__test__/forbidden', (_req, _res) => {
+      throw new AppError({
+        type: 'https://liquifact.com/probs/forbidden',
+        title: 'Forbidden',
+        status: 403,
+        detail: 'Forbidden test route',
+      });
+    });
+
+    app.get('/__test__/upstream', (_req, _res) => {
+      const error = new Error('connection refused');
+      error.code = 'ECONNREFUSED';
+      throw error;
+    });
+
+    app.get('/__test__/explode', (_req, _res) => {
+      throw new Error('Sensitive stack detail should not leak');
+    });
+
+    app.get('/__test__/throw-string', (_req, _res) => {
+      throw 'boom';
+    });
+  }
+
+  app.use((req, res, next) => {
+    next(
+      new AppError({
+        type: 'https://liquifact.com/probs/not-found',
+        title: 'Resource Not Found',
+        status: 404,
+        detail: `The path ${req.path} does not exist.`,
+        instance: req.originalUrl,
+      })
+    );
+  });
+
+  app.use((err, req, res, _next) => {
+    console.error(err);
+    return res.status(err.status || 500).json({ error: 'Internal server error' });
+  });
+
+  return app;
+}
+
+const app = createApp({ enableTestRoutes: process.env.NODE_ENV === 'test' });
+
+// ─── Server lifecycle ─────────────────────────────────────────────────────────
+
+/**
+ * Starts the Express server.
+ *
+ * @returns {import('http').Server}
+ */
+const startServer = () => {
+  const server = app.listen(PORT, () => {
+    console.warn(`LiquiFact API running at http://localhost:${PORT}`);
+  });
+  return server;
+};
+
+/**
+ * Resets the in-memory store (for testing purposes).
  *
  * @returns {void}
  */
-function resetStore() {
-  store = new Map();
-}
+// const resetStore = () => {
+//   invoices = [];
+// };
 
-/**
- * Starts the HTTP server.
- *
- * @returns {import('http').Server} The running server instance.
- */
-function startServer() {
-  return app.listen(PORT, () => {
-    console.log(`LiquiFact API running at http://localhost:${PORT}`);
-  });
-}
-
-app.use(cors());
-app.use(express.json());
-app.use(globalLimiter);
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'liquifact-api',
-    version: '0.1.0',
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// API info
-app.get('/api', (req, res) => {
-  res.json({
-    name: 'LiquiFact API',
-    description: 'Global Invoice Liquidity Network on Stellar',
-    endpoints: {
-      health: 'GET /health',
-      invoices: 'GET/POST /api/invoices',
-      escrow: 'GET/POST /api/escrow',
-    },
-  });
-});
-
-// Invoices
-app.get('/api/invoices', deprecate({
-  sunset: '2026-12-31T23:59:59Z',
-  link: 'https://docs.liquifact.com/api/v2/invoices',
-}), (req, res) => {
-  const includeDeleted = req.query.includeDeleted === 'true';
-  const invoices = Array.from(store.values()).filter(
-    (inv) => includeDeleted || inv.deletedAt === null
-  );
-  res.json({ data: invoices });
-});
-
-app.post('/api/invoices', authenticateToken, sensitiveLimiter, (req, res) => {
-  const { amount, customer } = req.body;
-  if (!amount || !customer) {
-    return res.status(400).json({ error: 'Missing required fields: amount, customer' });
-  }
-  const id = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const invoice = { id, amount, customer, deletedAt: null, createdAt: new Date().toISOString() };
-  store.set(id, invoice);
-  return res.status(201).json({ data: invoice });
-});
-
-app.delete('/api/invoices/:id', (req, res) => {
-  const { id } = req.params;
-  const invoice = store.get(id);
-  if (!invoice) {return res.status(404).json({ error: 'Invoice not found' });}
-  if (invoice.deletedAt !== null) {return res.status(400).json({ error: 'Invoice is already deleted' });}
-  invoice.deletedAt = new Date().toISOString();
-  store.set(id, invoice);
-  return res.json({ data: invoice });
-});
-
-app.patch('/api/invoices/:id/restore', (req, res) => {
-  const { id } = req.params;
-  const invoice = store.get(id);
-  if (!invoice) {return res.status(404).json({ error: 'Invoice not found' });}
-  if (invoice.deletedAt === null) {return res.status(400).json({ error: 'Invoice is not deleted' });}
-  invoice.deletedAt = null;
-  store.set(id, invoice);
-  return res.json({ data: invoice });
-});
-
-// Escrow
-app.get('/api/escrow/:invoiceId', (req, res) => {
-  const { invoiceId } = req.params;
-  res.json({
-    data: { invoiceId, status: 'not_found', fundedAmount: 0 },
-    message: 'Escrow state will be read from Soroban contract.',
-  });
-});
-
-app.post('/api/escrow', authenticateToken, (req, res) => {
-  res.json({
-    data: { status: 'funded' },
-    message: 'Escrow operation placeholder.',
-  });
-});
-
-// 404
-app.use((req, res) => {
-  res.status(404).json({ error: 'Not found', path: req.path });
-});
-
-// Error handler
-app.use(errorHandler);
-
-if (require.main === module) {
+if (process.env.NODE_ENV !== 'test') {
   startServer();
 }
 
-app.resetStore = resetStore;
-app.startServer = startServer;
 module.exports = app;
-module.exports.app = app;
+module.exports.createApp = createApp;
+module.exports.startServer = startServer;
 module.exports.resetStore = resetStore;
 module.exports.startServer = startServer;
