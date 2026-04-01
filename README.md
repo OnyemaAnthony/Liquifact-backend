@@ -158,15 +158,30 @@ By default, reports are written to:
 tests/load/reports/
 ```
 │   ├── config/
-│   │   └── cors.js     # CORS allowlist parsing and policy
+│   │   └── cors.js          # CORS allowlist parsing and policy
+│   ├── middleware/
+│   │   ├── auth.js          # JWT authentication middleware
+│   │   ├── audit.js         # Immutable audit logging for mutations
+│   │   ├── deprecation.js   # API deprecation notices
+│   │   ├── errorHandler.js  # Centralized error handling
+│   │   └── rateLimit.js     # Rate limiting enforcement
 │   ├── services/
 │   │   ├── invoiceService.js # Business logic and pagination
 │   │   └── soroban.js        # Contract interaction wrappers
 │   ├── utils/
-│   │   └── retry.js    # Exponential backoff utility
-│   ├── app.js          # Express app, middleware, routes
-│   └── index.js        # Runtime bootstrap
-├── .env.example        # Env template
+│   │   ├── asyncHandler.js  # Express async error wrapper
+│   │   └── retry.js         # Exponential backoff utility
+│   ├── app.js               # Express app, middleware, routes
+│   └── index.js             # Runtime bootstrap
+├── tests/
+│   ├── setup.js             # Test configuration
+│   ├── helpers/
+│   │   └── createTestApp.js # Test app factory
+│   ├── unit/
+│   │   ├── asyncHandler.test.js
+│   │   └── errorHandler.test.js
+│   └── app.test.js
+├── .env.example             # Env template
 ├── eslint.config.js
 └── package.json
 ```
